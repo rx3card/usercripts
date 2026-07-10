@@ -1,17 +1,6 @@
 ### UserScripts
 Esto son dos scripts que permiten descargar contenido multimedia como PDFs & Videos desde Google Drive, aunque el botón de descarga este desactivado.
 
-## Guia
-1. Instala `violentmonkey` es una extensión que se encuentra en la `extension store`.
-2. Preferiblemente utiliza `brave` como navegador funciona mejor. Chrome bloquea la extension & los `userscripts`.
-3. Una vez instalada la extension, diríjase a su configuración y dele click en agregar un nuevo script o en “New/Nuevo”, le aparecerá como un editor.
-4. Copie y pegue el primer script y dele en guardar.
-5. Haga lo mismo para instalar cualquier otro.
-
-
-### UserScripts
-Esto son dos scripts que permiten descargar contenido multimedia como PDFs & Videos desde Google Drive, aunque el botón de descarga este desactivado.
-
 ### Guia
 1. Instala `violentmonkey` es una extensión que se encuentra en la `extension store`.
 2. Preferiblemente utiliza `brave` como navegador, funciona mejor. Chrome bloquea la extensión & los `userscripts`.
