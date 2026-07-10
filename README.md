@@ -8,7 +8,7 @@ Esto son dos scripts que permiten descargar contenido multimedia como PDFs & Vid
 4. Copie y pegue el primer script y dele en guardar.
 5. Haga lo mismo para instalar cualquier otro.
 
-#### Scripts.
+#### Scripts
 1. `./EnhancedGoogleDrivePDFDownloader_v4.user.js`, permite descargar PDFs.
 2. `./GoogleDriveRestrictedVideoDownloader.js`, permite descargar videos.
 
