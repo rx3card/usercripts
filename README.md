@@ -18,3 +18,13 @@ Crea una carpeta y guarda tus dos `.mp3/4/.m4a`, luego dentra a la terminal y ej
 ````shell
 ffmpeg -i video.mp4 -i audio.m4a -c copy video_FINAL.mp4
 ````
+
+Existe un tercer `script`. Imagine que quiere descargar varios videos. Se irían acumulando cierta cantidad, pues tendría que unirlos manualmente y eso consumiría una cierta cantidad de tiempo, para agilizar eso es que existe el script `Merge av.js`, simplemente ejecute
+```shell
+node '.\Merge av.js'
+```
+
+Este script une automáticamente el audio & video en un `.mp4`. Detecta si la duración del tiempo coincide y los une.
+
+_Nota:_ Desde el día `11/07/26` la extensión store bloqueo `violentmonkey` así que recomiendo empaquetar la extensión o utilizar `Firefox`. En la extensión store de `Firefox` aún está disponible y funciona sin ningún problema.
+
