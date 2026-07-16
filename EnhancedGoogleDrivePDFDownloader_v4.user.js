@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Enhanced Google Drive PDF Downloader
 // @namespace    GoogleDrivePDFDownloader
-// @version      7
-// @description  Download protected PDF files from Google Drive — reads real page count and verifies the tail so no page is missed
-// @author       akvabhi (improved by rx3card)
+// @version      8
+// @description  Download protected PDF files from Google Drive — v8: CSP/Trusted-Types safe (no innerHTML) + fixed filename detection for the new Drive viewer.
+// @author       akvabhi (improved by Claude)
 // @match        https://drive.google.com/*
 // @grant        none
 // @homepage     https://github.com/Akv2021/Enhanced-Google-Drive-PDF-Downloader
@@ -142,20 +142,69 @@
         return /\.pdf$/i.test(clean) ? clean : `${clean}.pdf`;
     }
 
-    function detectFileName() {
-        const meta = document.querySelector('meta[itemprop="name"]')?.content;
-        if (meta && meta.trim()) return ensurePdfExt(meta);
+    // Textos de la interfaz de Drive que NUNCA son el nombre del archivo.
+    function isJunkName(txt) {
+        return /^(archivo|ver|herramientas|ayuda|compartir|p[áa]gina|de|buscar|abrir con|descargar|download|share|file|edit|view|help|tools|google drive|mi unidad|p[áa]gina principal|proyectos|computadoras|compartidos conmigo|recientes|destacados|spam|papelera|almacenamiento|obtener m[áa]s|preguntarle a gemini|transcripci[óo]n)$/i.test(txt.trim());
+    }
 
-        const nodes = document.querySelectorAll('span, div, h1, h2, [role="heading"], [aria-label]');
-        for (const el of nodes) {
+    /**
+     * v8: detecta el nombre del PDF SIN exigir que termine en ".pdf".
+     * El visor de Drive muestra el nombre sin extensión (ej. "Nuevo Taller N3 -
+     * Biología Macro CAL A 2026"), por eso el detector anterior fallaba y caía
+     * al título de la pestaña (que es el nombre de la CARPETA, no del archivo).
+     */
+    function detectFileName() {
+        // 1) Meta oficial de Drive (la más fiable cuando existe).
+        const meta = document.querySelector('meta[itemprop="name"]')?.content;
+        if (meta && meta.trim() && !isJunkName(meta)) return ensurePdfExt(meta);
+
+        // 2) Ancla "Mostrando <nombre>" / "Showing <name>": identifica el archivo ACTIVO.
+        for (const el of document.querySelectorAll('div, span')) {
+            if (el.children.length !== 0) continue; // solo nodos de texto hoja
+            const txt = (el.textContent || '').trim();
+            const m = txt.match(/^(?:Mostrando|Showing|Affichage de)\s+(.+)$/i);
+            if (m && m[1]) {
+                const name = m[1].trim();
+                if (name && name.length < 200 && !isJunkName(name)) return ensurePdfExt(name);
+            }
+        }
+
+        // 3) Cualquier texto que SÍ traiga extensión .pdf (caso del visor clásico).
+        for (const el of document.querySelectorAll('span, div, h1, h2, [role="heading"], [aria-label]')) {
             const aria = el.getAttribute && el.getAttribute('aria-label');
             const txt = (aria || el.textContent || '').trim();
-            if (txt && txt.length < 120 && !txt.includes('\n') && /\.pdf$/i.test(txt)) {
+            if (txt && txt.length < 200 && !txt.includes('\n') && /\.pdf$/i.test(txt)) {
                 return ensurePdfExt(txt);
             }
         }
-        let title = document.title.replace(/\s*[-–|]\s*Google Drive\s*$/i, '').trim();
-        if (title) return ensurePdfExt(title);
+
+        // 4) Encabezado del visor: texto VISIBLE en la franja superior de la pantalla,
+        //    con fuente grande, que no sea parte del menú ni de la barra lateral.
+        //    Aquí es donde vive "Nuevo Taller N3 - Biología Macro CAL A 2026".
+        const candidates = [];
+        for (const el of document.querySelectorAll('div, span, h1, h2, [role="heading"]')) {
+            if (el.children.length !== 0) continue;
+            const txt = (el.textContent || '').trim();
+            if (!txt || txt.length < 3 || txt.length > 200 || txt.includes('\n')) continue;
+            if (isJunkName(txt)) continue;
+            if (!/[A-Za-z0-9]/.test(txt)) continue;
+            const rect = el.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) continue; // invisible
+            if (rect.top > 160) continue;                      // fuera del encabezado
+            if (rect.left > window.innerWidth * 0.6) continue;  // el nombre va a la izquierda
+            const size = parseFloat(getComputedStyle(el).fontSize) || 0;
+            candidates.push({ txt, size, top: rect.top });
+        }
+        if (candidates.length) {
+            // El nombre del archivo es el texto más grande del encabezado.
+            candidates.sort((a, b) => b.size - a.size || a.top - b.top);
+            return ensurePdfExt(candidates[0].txt);
+        }
+
+        // 5) Respaldo: título de la pestaña sin el sufijo de Google.
+        const title = document.title.replace(/\s*[-–|]\s*Google Drive\s*$/i, '').trim();
+        if (title && !isJunkName(title)) return ensurePdfExt(title);
+
         return 'documento.pdf';
     }
 
@@ -463,7 +512,7 @@
 
         const info = document.createElement('div');
         info.id = 'pdfInfoIcon';
-        info.innerHTML = 'ℹ️';
+        info.textContent = 'ℹ️';
         info.style.cssText = `cursor:help;font-size:16px;position:relative;width:36px;height:36px;background:#4285f4;border-radius:4px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:background .3s ease;`;
 
         const tooltip = document.createElement('div');
@@ -471,12 +520,24 @@
         tooltip.style.cssText = `position:absolute;top:calc(100% + 8px);right:0;background:#333;color:#fff;padding:16px;border-radius:4px;font-size:13px;width:290px;display:none;z-index:10000;font-family:Arial,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.2);transition:opacity .3s ease;`;
 
         const t1 = document.createElement('div');
-        t1.innerHTML = '✅ <strong>v7:</strong> Lee cuántas páginas tiene el PDF y verifica que no falte ninguna (rápido si están todas).';
+        // CSP-safe: sin innerHTML (Google Drive activó Trusted Types y lo bloquea)
+        const t1a = document.createElement('strong');
+        t1a.textContent = '✅ v8: ';
+        t1.appendChild(t1a);
+        t1.appendChild(document.createTextNode('CSP-safe. Lee cuántas páginas tiene el PDF y verifica que no falte ninguna.'));
         t1.style.marginBottom = '8px';
 
         const t2 = document.createElement('div');
         t2.style.cssText = `margin-bottom:2px;padding:8px;background:rgba(255,255,255,.1);border-radius:4px;`;
-        t2.innerHTML = `<div style="margin-bottom:8px;font-weight:bold;">Verás:</div><div style="font-size:12px;line-height:1.4;">El contador muestra <strong>páginas capturadas / total</strong>, ej. "14/16". Si detecta que faltan, revisa la cola automáticamente.</div>`;
+        // CSP-safe: construido con DOM en vez de innerHTML
+        const t2title = document.createElement('div');
+        t2title.style.cssText = 'margin-bottom:8px;font-weight:bold;';
+        t2title.textContent = 'Verás:';
+        const t2body = document.createElement('div');
+        t2body.style.cssText = 'font-size:12px;line-height:1.4;';
+        t2body.textContent = 'El contador muestra páginas capturadas / total, ej. "14/16". Si detecta que faltan, revisa la cola automáticamente.';
+        t2.appendChild(t2title);
+        t2.appendChild(t2body);
 
         const toggle = createToggleSwitch();
 
@@ -488,7 +549,17 @@
         gh.href = 'https://github.com/Akv2021/Enhanced-Google-Drive-PDF-Downloader/issues';
         gh.target = '_blank';
         gh.style.cssText = `color:#fff;text-decoration:none;display:flex;align-items:center;`;
-        gh.innerHTML = `<svg height="20" width="20" viewBox="0 0 16 16" style="fill:#fff;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`;
+        // CSP-safe: SVG creado con createElementNS en vez de innerHTML
+        const NS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('height', '20');
+        svg.setAttribute('width', '20');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.style.fill = '#fff';
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', 'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z');
+        svg.appendChild(path);
+        gh.appendChild(svg);
 
         let timer = null, hovered = false;
         function startTimer() {
@@ -533,11 +604,30 @@
     }
 
     function initialize() {
-        log('Iniciando PDF Downloader v7...');
+        log('Iniciando PDF Downloader v8 (CSP-safe)...');
+        // v8: cada paso va aislado. Antes, un error de CSP en la creación de la UI
+        // rompía addDownloadButton a media ejecución y dejaba el script inservible.
+        const boot = () => {
+            try {
+                addDownloadButton();
+            } catch (e) {
+                log(`Error creando la interfaz: ${e.message}`, 'error');
+            }
+            try {
+                setupClickOutside();
+            } catch (e) {
+                log(`Error en setupClickOutside: ${e.message}`, 'error');
+            }
+            try {
+                log(`Nombre detectado para este archivo: "${detectFileName()}"`);
+            } catch (e) {
+                log(`No se pudo detectar el nombre: ${e.message}`, 'error');
+            }
+        };
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => { addDownloadButton(); setupClickOutside(); });
+            document.addEventListener('DOMContentLoaded', boot);
         } else {
-            addDownloadButton(); setupClickOutside();
+            boot();
         }
     }
 
